@@ -2,13 +2,12 @@ import React from "react";
 import { Calendar, MapPin, MessageSquare } from "lucide-react";
 import { Complaint } from "../../types";
 
-// ✅ Updated Props — now includes showPriority
 interface ComplaintCardProps {
   complaint: Complaint;
   isSelected?: boolean;
   onSelect?: (complaint: Complaint) => void;
   showStatus?: boolean;
-  showPriority?: boolean;  // ← ADDED THIS
+  showPriority?: boolean;
   compact?: boolean;
 }
 
@@ -70,15 +69,14 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
   isSelected,
   onSelect,
   showStatus = true,
-  showPriority = false,  // ← Default false
+  showPriority = false,
   compact = false,
 }) => {
-  // Safe defaults
   const safeStatus = complaint?.status || "pending";
   const safePriority = complaint?.priority || "medium";
   const safeCategory = complaint?.category || "General";
   const safeTitle = complaint?.title || "Untitled Complaint";
-  const safeDescription = complaint?.description || "No description available.";
+  const safeDescription = complaint?.description || "No description.";
   const safeDate = complaint?.submittedAt
     ? new Date(complaint.submittedAt)
     : new Date();
@@ -95,38 +93,37 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
         compact ? "p-4" : ""
       } animate-fade-in bg-white`}
     >
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-3 flex-wrap">
-            {/* Complaint ID */}
             <span className="font-mono text-sm font-bold text-cyan-600 tracking-wider">
               #{complaint.id || "XXXX"}
             </span>
 
-            {/* Status Badge */}
             {showStatus && (
               <span
-                className={`${statusStyles.bg} ${statusStyles.text} px-3 py-1.5 rounded-full text-xs font-bold border ${statusStyles.border} flex items-center gap-2 whitespace-nowrap`}
+                className={`${statusStyles.bg} ${statusStyles.text} px-3 py-1.5 rounded-full text-xs font-bold border ${statusStyles.border} flex items-center gap-2`}
               >
-                <span className={`w-2.5 h-2.5 rounded-full ${statusStyles.dot} animate-pulse`}></span>
-                {safeStatus.replace("-", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${statusStyles.dot} animate-pulse`}
+                ></span>
+                {safeStatus.replace("-", " ").replace(/\b\w/g, (l) =>
+                  l.toUpperCase()
+                )}
               </span>
             )}
 
-            {/* Priority Badge — ONLY SHOW IF showPriority=true */}
             {showPriority && (
               <span
                 className={`px-3 py-1.5 rounded-full text-xs font-bold border ${getPriorityStyles(
                   safePriority
-                )} whitespace-nowrap`}
+                )}`}
               >
                 {safePriority.toUpperCase()} PRIORITY
               </span>
             )}
           </div>
 
-          {/* Title */}
           <h3
             className={`font-bold text-slate-900 mb-2 line-clamp-2 ${
               compact ? "text-lg" : "text-xl"
@@ -135,7 +132,6 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
             {safeTitle}
           </h3>
 
-          {/* Description */}
           {!compact && (
             <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">
               {safeDescription}
@@ -144,10 +140,8 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
         </div>
       </div>
 
-      {/* Footer */}
       <div className="flex items-center justify-between text-xs text-slate-500 pt-4 border-t border-slate-100">
         <div className="flex items-center gap-4">
-          {/* Date */}
           <span className="flex items-center gap-1.5 font-medium">
             <Calendar className="w-4 h-4" />
             {safeDate.toLocaleDateString("en-US", {
@@ -157,14 +151,12 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
             })}
           </span>
 
-          {/* Category */}
           <span className="hidden md:flex items-center gap-1.5">
             <MapPin className="w-4 h-4" />
             {safeCategory}
           </span>
         </div>
 
-        {/* Replies */}
         {repliesCount > 0 && (
           <span className="flex items-center gap-1.5 font-bold text-cyan-600">
             <MessageSquare className="w-4 h-4" />
@@ -175,3 +167,5 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({
     </div>
   );
 };
+
+export default ComplaintCard;

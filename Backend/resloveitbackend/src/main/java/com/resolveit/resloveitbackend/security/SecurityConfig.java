@@ -1,6 +1,6 @@
 package com.resolveit.resloveitbackend.security;
 
-import com.resolveit.resloveitbackend.repository.OfficerRepository; // ADD THIS
+import com.resolveit.resloveitbackend.repository.OfficerRepository;
 import com.resolveit.resloveitbackend.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +28,7 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
-    private final OfficerRepository officerRepository; // ADD THIS
+    private final OfficerRepository officerRepository;
 
     public SecurityConfig(JwtUtil jwtUtil, UserRepository userRepository, OfficerRepository officerRepository) {
         this.jwtUtil = jwtUtil;
@@ -38,7 +38,7 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthFilter jwtAuthFilter() {
-        return new JwtAuthFilter(jwtUtil, userRepository, officerRepository); // FIXED
+        return new JwtAuthFilter(jwtUtil, userRepository, officerRepository);
     }
 
     @Bean
@@ -48,19 +48,29 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/officers/register").permitAll()
 
+                // ADMIN routes
                 .requestMatchers("/api/officers/pending").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
 
+                // OFFICER routes
                 .requestMatchers("/api/officer/complaints").hasRole("OFFICER")
                 .requestMatchers("/api/officer/complaints/**").hasRole("OFFICER")
                 .requestMatchers("/api/officer/**").hasRole("OFFICER")
 
-                .requestMatchers(HttpMethod.POST, "/api/complaints").authenticated()
-                .requestMatchers("/api/complaints").authenticated()
+                // *** ALLOW OFFICER + ADMIN to update complaint status - MUST BE BEFORE generic complaints/** ***
+                .requestMatchers(HttpMethod.PATCH, "/api/complaints/*/status").hasAnyRole("ADMIN", "OFFICER")
+                .requestMatchers(HttpMethod.PUT,   "/api/complaints/*/status").hasAnyRole("ADMIN", "OFFICER")
+                .requestMatchers(HttpMethod.PUT,   "/api/complaints/*/priority").hasAnyRole("ADMIN", "OFFICER")
+
+                // Other complaint endpoints → any authenticated user
+                .requestMatchers(HttpMethod.POST, "/api/complaints/submit").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/complaints/user").authenticated()
+                .requestMatchers(HttpMethod.GET, "/api/complaints").authenticated()
                 .requestMatchers("/api/complaints/**").authenticated()
 
                 .anyRequest().authenticated()

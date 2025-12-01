@@ -1,6 +1,7 @@
 package com.resolveit.resloveitbackend.repository;
 
 import com.resolveit.resloveitbackend.Model.Complaint;
+import com.resolveit.resloveitbackend.Model.ComplaintStatus;
 import com.resolveit.resloveitbackend.Model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -21,13 +22,12 @@ public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
     List<Complaint> findBySubmittedBy(String submittedBy);
 
     /**
-     * NEW: Find all complaints assigned to a specific officer by email
-     * Critical for Officer Dashboard: GET /api/officer/complaints?email=...
+     * Find all complaints assigned to a specific officer by email
      */
     List<Complaint> findByAssignedTo(String assignedTo);
 
     /**
-     * Optional: Find complaints by status (useful for stats/filters later)
+     * Corrected: Find complaints by status using Enum (not String)
      */
-    List<Complaint> findByStatus(String status);
+    List<Complaint> findByStatus(ComplaintStatus status);
 }

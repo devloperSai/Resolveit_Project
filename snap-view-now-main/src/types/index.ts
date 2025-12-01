@@ -8,7 +8,7 @@ export interface Officer {
   id: number;
   name: string;
   email: string;
-  department: string;
+  department?: string;
   availability?: OfficerAvailability;
 }
 

@@ -46,8 +46,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     }
   });
 
+  // Read token from the canonical key first, fall back to legacy 'token' key for compatibility
   const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem("resolveit_token")
+    localStorage.getItem("resolveit_token") || localStorage.getItem("token")
   );
   const [loading, setLoading] = useState(false);
 
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     };
 
     restoreUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // ✅ Login (citizen / officer / admin)
@@ -161,7 +163,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
 
     setToken(token);
     setUser(userData);
+    // Write token to both keys for backwards compatibility with other code
     localStorage.setItem("resolveit_token", token);
+    localStorage.setItem("token", token);
     localStorage.setItem("resolveit_user", JSON.stringify(userData));
   };
 
@@ -170,6 +174,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     setUser(null);
     setToken(null);
     localStorage.removeItem("resolveit_token");
+    localStorage.removeItem("token"); // remove legacy key as well
     localStorage.removeItem("resolveit_user");
   };
 

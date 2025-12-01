@@ -10,6 +10,10 @@ import { Footer } from "./shared/Footer";
 import { StatCard } from "./shared/StatCard";
 import { ComplaintCard } from "./shared/ComplaintCard";
 import { Complaint, ComplaintStatus, ComplaintPriority } from "../types";
+// NEW: import analytics
+import AdminAnalytics from "./shared/AdminAnalytics";
+// <<< NEW: import useComplaints to get the workload function >>>
+import { useComplaints } from "../context/ComplaintContext";
 
 const API_BASE = "http://localhost:8080/api";
 
@@ -41,6 +45,9 @@ export const AdminDashboard: React.FC = () => {
   // Officers list
   const [officers, setOfficers] = useState<{ id: number; email: string; name: string; department?: string }[]>([]);
 
+  // <<< NEW: pull only getOfficerWorkload from context (no name collisions) >>>
+  const { getOfficerWorkload } = useComplaints();
+
   // Fetch complaints
   useEffect(() => {
     fetchComplaints();
@@ -52,14 +59,21 @@ export const AdminDashboard: React.FC = () => {
       const res = await fetch(`${API_BASE}/complaints`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setComplaints(data.map((c: any) => ({
-        ...c,
-        id: Number(c.id),
-        submittedAt: c.submittedAt || new Date().toISOString(),
-        notes: c.notes || [],
-        replies: c.replies || [],
-        attachments: c.attachments || [],
-      })));
+      setComplaints(
+  data.map((c: any) => ({
+    ...c,
+    id: Number(c.id),
+    priority:
+      typeof c.priority === "string"
+        ? c.priority.toLowerCase()
+        : "medium",
+    submittedAt: c.submittedAt || new Date().toISOString(),
+    notes: c.notes || [],
+    replies: c.replies || [],
+    attachments: c.attachments || [],
+  }))
+);
+
     } catch (err) {
       alert("Failed to load complaints.");
     } finally {
@@ -166,16 +180,44 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const updatePriority = async (id: number, priority: ComplaintPriority) => {
-    try {
-      await fetch(`${API_BASE}/complaints/${id}/priority`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ priority }),
-      });
-      setComplaints(prev => prev.map(c => c.id === id ? { ...c, priority } : c));
-      if (selectedComplaint?.id === id) setSelectedComplaint(prev => prev ? { ...prev, priority } : null);
-    } catch { alert("Failed"); }
-  };
+  try {
+    const payload = { priority: priority.toUpperCase() }; // convert to enum format
+
+    const res = await fetch(`${API_BASE}/complaints/${id}/priority`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error("Failed to update priority");
+
+    const updatedComplaint = await res.json();
+
+    // Update the UI with backend truth
+    setComplaints(prev =>
+  prev.map(c =>
+    c.id === id
+      ? { ...c, ...updatedComplaint, priority: updatedComplaint.priority.toLowerCase() }
+      : c
+  )
+);
+
+
+    if (selectedComplaint?.id === id) {
+      setSelectedComplaint(prev =>
+  prev
+    ? { ...prev, ...updatedComplaint, priority: updatedComplaint.priority.toLowerCase() }
+    : null
+);
+
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert("Failed to update priority");
+  }
+};
+
 
   // Send reply
   const sendReply = async () => {
@@ -244,6 +286,15 @@ export const AdminDashboard: React.FC = () => {
           <StatCard label="Resolved" value={stats.resolved} icon={<CheckCircle2 />} color="green" />
           <StatCard label="High Priority" value={stats.highPriority} icon={<AlertTriangle />} color="red" />
         </div>
+
+        {/* Insert AdminAnalytics here (full-width card above the lists) */}
+         <div className="card p-6 mb-8 shadow-lg">
+      <AdminAnalytics
+        complaints={complaints}
+        officers={officers}
+        getOfficerWorkload={getOfficerWorkload} // pass the function from context
+      />
+    </div>
 
         {/* Filters */}
         <div className="card p-6 mb-8 shadow-lg">
@@ -372,7 +423,7 @@ export const AdminDashboard: React.FC = () => {
                     <label className="text-xs uppercase font-bold text-slate-600 block mb-2">Priority</label>
                     <select
                       value={selectedComplaint.priority}
-                      onChange={e => updatePriority(selectedComplaint.id, e.target.value as ComplaintPriority)}
+                   onChange={e => updatePriority(selectedComplaint.id,e.target.value as ComplaintPriority)}
                       className="input-field"
                     >
                       <option value="low">Low</option>
@@ -554,3 +605,5 @@ export const AdminDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default AdminDashboard;

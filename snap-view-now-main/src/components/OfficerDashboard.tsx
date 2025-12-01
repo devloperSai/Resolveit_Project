@@ -10,6 +10,9 @@ import { Footer } from './shared/Footer';
 import { StatCard } from './shared/StatCard';
 import { ComplaintCard } from './shared/ComplaintCard';
 import { Complaint, ComplaintStatus } from '../types';
+import toast from 'react-hot-toast';
+
+
 
 const API_BASE = "http://localhost:8080/api";
 
@@ -68,24 +71,43 @@ export const OfficerDashboard: React.FC = () => {
     }
   };
 
-  // Update status
-  const updateStatus = async (id: number, status: ComplaintStatus) => {
-    try {
-      const res = await fetch(`${API_BASE}/complaints/${id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error();
-
-      setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
-      if (selectedComplaint?.id === id) {
-        setSelectedComplaint({ ...selectedComplaint, status });
-      }
-    } catch {
-      alert("Failed to update status. Try again.");
+ // Update status using context (which has toast notifications)
+const updateStatus = async (id: number, status: ComplaintStatus) => {
+  try {
+    const res = await fetch(`${API_BASE}/complaints/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ status: status.toUpperCase().replace('-', '_') }),
+    });
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || 'Failed to update status');
     }
-  };
+
+    const updatedComplaint = await res.json();
+    
+    // Update local state
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    if (selectedComplaint?.id === id) {
+      setSelectedComplaint({ ...selectedComplaint, status });
+    }
+    
+    // ✅ Show success toast
+    toast.success(`Status updated to ${status.replace('-', ' ').toUpperCase()}`, {
+      duration: 3000,
+      position: 'top-right',
+    });
+    
+  } catch (error) {
+    console.error('Failed to update status:', error);
+    // ❌ Show error toast
+    toast.error('Failed to update status. Please try again.', {
+      duration: 4000,
+      position: 'top-right',
+    });
+  }
+};
 
   // Send reply to citizen
   const sendReply = async () => {
@@ -307,6 +329,8 @@ export const OfficerDashboard: React.FC = () => {
                     <NoteIcon className="w-4 h-4" />
                     Note
                   </button>
+                        
+
                 </div>
 
                 {/* Admin Updates */}
@@ -378,6 +402,7 @@ export const OfficerDashboard: React.FC = () => {
               <button onClick={sendReply} className="btn-primary flex-1 py-3 text-lg font-semibold">
                 Send Update
               </button>
+        
               <button 
                 onClick={() => { setShowReplyModal(false); setReplyContent(''); }} 
                 className="btn-ghost flex-1 py-3 text-lg"
@@ -417,6 +442,7 @@ export const OfficerDashboard: React.FC = () => {
               >
                 Cancel
               </button>
+              
             </div>
           </div>
         </div>
