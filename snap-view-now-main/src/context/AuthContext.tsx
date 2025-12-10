@@ -5,8 +5,7 @@ import React, {
   useState,
   ReactNode,
 } from "react";
-
-export type UserRole = "citizen" | "officer" | "admin";
+import { UserRole, normalizeRole } from "../utils/roleUtils";
 
 export interface User {
   id?: number | null;
@@ -57,6 +56,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
     const restoreUser = async () => {
       if (!token || user) return;
 
+      setLoading(true);
       try {
         const res = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -65,13 +65,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
         if (!res.ok) throw new Error("Session expired");
 
         const data = await res.json();
+
         const restoredUser: User = {
           id: data.userId ?? data.id ?? null,
           email: data.email,
           name: data.name,
-          role:
-            (data.role?.toLowerCase().replace("role_", "") as UserRole) ||
-            "citizen",
+          role: normalizeRole(data.role), // ✅ normalized here
         };
 
         setUser(restoredUser);
@@ -79,6 +78,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
       } catch (err) {
         console.warn("Token restore failed, logging out.");
         logout();
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -151,14 +152,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   // ✅ Common handler for successful login/register
   const handleAuthSuccess = (data: any) => {
     const token = data.token;
-    const role =
-      (data.role?.toLowerCase().replace("role_", "") as UserRole) || "citizen";
+    const role = normalizeRole(data.role); // ✅ normalized here
 
     const userData: User = {
       id: data.userId ?? null,
       email: data.email,
       name: data.name,
-      role,
+      role, // already normalized
     };
 
     setToken(token);

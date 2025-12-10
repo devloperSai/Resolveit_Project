@@ -1,12 +1,14 @@
 package com.resolveit.resloveitbackend.controller;
 
 import com.resolveit.resloveitbackend.Model.Complaint;
+import com.resolveit.resloveitbackend.Model.ComplaintPriority;
 import com.resolveit.resloveitbackend.Model.ComplaintStatus;
 import com.resolveit.resloveitbackend.Model.Officer;
 import com.resolveit.resloveitbackend.Model.PendingOfficer;
 import com.resolveit.resloveitbackend.repository.ComplaintRepository;
 import com.resolveit.resloveitbackend.repository.OfficerRepository;
 import com.resolveit.resloveitbackend.repository.PendingOfficerRepository;
+import com.resolveit.resloveitbackend.service.ComplaintService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +29,9 @@ public class AdminController {
 
     @Autowired
     private ComplaintRepository complaintRepository; // Required for assignment
+
+    @Autowired
+    private ComplaintService complaintService;
 
     // === EXISTING: Approve Officer ===
     @PostMapping("/approve/{id}")
@@ -57,31 +62,29 @@ public class AdminController {
 
     // === NEW: Assign Officer to Complaint ===
     @PostMapping("/complaints/{complaintId}/assign")
-    public ResponseEntity<?> assignOfficerToComplaint(
+    public ResponseEntity<?> assignOfficerWithPriority(
             @PathVariable Long complaintId,
             @RequestBody Map<String, String> request) {
-
         String officerEmail = request.get("officerEmail");
-
-        if (officerEmail == null || officerEmail.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("officerEmail is required");
+        String priorityStr = request.get("priority"); // "HIGH", "MEDIUM", "LOW"
+        if (officerEmail == null || priorityStr == null) {
+            return ResponseEntity.badRequest()
+                    .body("Both officerEmail and priority are required");
         }
-
-        Optional<Complaint> complaintOpt = complaintRepository.findById(complaintId);
-        if (complaintOpt.isEmpty()) {
-            return ResponseEntity.status(404).body("Complaint not found with ID: " + complaintId);
+        try {
+            ComplaintPriority priority = ComplaintPriority.valueOf(priorityStr.toUpperCase());
+           
+            Complaint updated = complaintService.assignComplaintWithPriority(
+                    complaintId,
+                    officerEmail,
+                    priority,
+                    "admin" // or get from auth
+            );
+           
+            return ResponseEntity.ok(updated);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body("Invalid priority. Use: HIGH, MEDIUM, LOW");
         }
-
-        Optional<Officer> officerOpt = officerRepo.findByEmail(officerEmail);
-        if (officerOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body("No approved officer found with email: " + officerEmail);
-        }
-
-        Complaint complaint = complaintOpt.get();
-        complaint.setAssignedTo(officerEmail);
-        complaint.setStatus(ComplaintStatus.ASSIGNED); // Auto-set to ASSIGNED
-        complaintRepository.save(complaint);
-
-        return ResponseEntity.ok("Officer " + officerOpt.get().getName() + " assigned successfully.");
     }
 }

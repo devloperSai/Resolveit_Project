@@ -48,10 +48,16 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-
+                // ✅ CRITICAL: Permit error endpoint to prevent infinite loop
+                .requestMatchers("/error").permitAll()
+                
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/officers/register").permitAll()
+
+                // FILE ACCESS - authenticated users can view files
+                .requestMatchers(HttpMethod.GET, "/api/files/complaints/**").authenticated()
+                .requestMatchers(HttpMethod.DELETE, "/api/files/complaints/**").hasAnyRole("ADMIN", "OFFICER")
 
                 // ADMIN routes
                 .requestMatchers("/api/officers/pending").hasRole("ADMIN")
@@ -62,16 +68,37 @@ public class SecurityConfig {
                 .requestMatchers("/api/officer/complaints/**").hasRole("OFFICER")
                 .requestMatchers("/api/officer/**").hasRole("OFFICER")
 
-                // *** ALLOW OFFICER + ADMIN to update complaint status - MUST BE BEFORE generic complaints/** ***
+                // *** ALLOW OFFICER + ADMIN to update complaint status / priority ***
                 .requestMatchers(HttpMethod.PATCH, "/api/complaints/*/status").hasAnyRole("ADMIN", "OFFICER")
                 .requestMatchers(HttpMethod.PUT,   "/api/complaints/*/status").hasAnyRole("ADMIN", "OFFICER")
                 .requestMatchers(HttpMethod.PUT,   "/api/complaints/*/priority").hasAnyRole("ADMIN", "OFFICER")
+
+                // ----- New SLA / Analytics / Feedback / Close / Overdue rules -----
+                // SLA endpoints - Admin and Officer
+                .requestMatchers("/api/sla/metrics").hasAnyRole("ADMIN", "OFFICER")
+                .requestMatchers("/api/sla/escalate").hasRole("ADMIN")
+                .requestMatchers("/api/sla/config").hasRole("ADMIN")
+
+                // Analytics endpoints - Admin and Officer
+                .requestMatchers("/api/analytics/**").hasAnyRole("ADMIN", "OFFICER")
+
+                // Complaint feedback - any authenticated user
+                .requestMatchers(HttpMethod.POST, "/api/complaints/*/feedback").authenticated()
+
+                // Close complaint - Admin and Officer
+                .requestMatchers(HttpMethod.POST, "/api/complaints/*/close").hasAnyRole("ADMIN", "OFFICER")
+
+                // Overdue and escalation queries - Admin and Officer
+                .requestMatchers("/api/complaints/overdue").hasAnyRole("ADMIN", "OFFICER")
+                .requestMatchers("/api/complaints/escalation-needed").hasAnyRole("ADMIN", "OFFICER")
 
                 // Other complaint endpoints → any authenticated user
                 .requestMatchers(HttpMethod.POST, "/api/complaints/submit").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/complaints/user").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/complaints").authenticated()
                 .requestMatchers("/api/complaints/**").authenticated()
+
+                .requestMatchers("/api/reports/**").hasAnyRole("ADMIN", "OFFICER")
 
                 .anyRequest().authenticated()
             )

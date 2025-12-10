@@ -1,29 +1,25 @@
-// src/types/index.ts
+// src/types.ts
+export type UserRole = "citizen" | "officer" | "admin";
 
-export type UserRole = 'citizen' | 'officer' | 'admin';
+export type ComplaintStatus = "pending" | "assigned" | "in-progress" | "resolved";
+export type ComplaintPriority = "low" | "medium" | "high";
 
-export type OfficerAvailability = 'Free' | 'Busy' | 'Overloaded';
+export interface User {
+  id?: number | null;
+  email: string;
+  name: string;
+  role: UserRole; // This now only accepts normalized roles
+}
 
 export interface Officer {
   id: number;
   name: string;
   email: string;
-  department?: string;
-  availability?: OfficerAvailability;
-}
-
-export type ComplaintStatus = 'pending' | 'assigned' | 'in-progress' | 'resolved';
-
-export type ComplaintPriority = 'low' | 'medium' | 'high';
-
-export interface User {
-  email: string;
-  name: string;
-  role: UserRole;
+  department: string;
 }
 
 export interface Note {
-  id: number;
+  id: string;
   content: string;
   createdBy: string;
   createdAt: string;
@@ -31,21 +27,13 @@ export interface Note {
 }
 
 export interface Reply {
-  id: number;
+  id: string;
   content: string;
-  createdBy: string;
   createdAt: string;
-  isAdminReply?: boolean;
+  isAdminReply: boolean;
 }
 
-export interface Feedback {
-  id: number;
-  content: string;
-  rating?: number;
-  createdAt: string;
-  visibleToOfficer: boolean;
-}
-
+// ✅ UPDATED: Complete Complaint interface with all new fields
 export interface Complaint {
   id: number;
   title: string;
@@ -53,34 +41,100 @@ export interface Complaint {
   category: string;
   status: ComplaintStatus;
   priority: ComplaintPriority;
-  assignedTo?: string;
-  isAnonymous: boolean;
+  
+  // Assignment
+  assignedTo: string | null;
+  assignedAt: string | null;
+  
+  // SLA Tracking (NEW)
+  acknowledgedAt: string | null;
+  firstResponseAt: string | null;
+  slaStart: string | null;
+  slaDue: string | null;
+  responseSladue: string | null;
+  escalationLevel: number;
+  escalationHistory: string | null; // JSON string
+  
+  // Audit (NEW)
+  createdBy: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+  version: number;
+  
+  // Workflow (NEW)
+  workflowState: string | null;
+  resolutionNotes: string | null;
+  closedAt: string | null;
+  closedBy: string | null;
+  
+  // Feedback (NEW)
+  rating: number | null;
+  feedback: string | null;
+  ratedAt: string | null;
+  
+  // Submission Info
   submittedBy: string;
   submittedAt: string;
-  attachments?: string[];
-
-  // ✅ Fixed: citizenName now exists
+  isAnonymous: boolean;
   citizenName?: string;
-
-  // Relations
-  user?: {
-    id: number;
-    email: string;
-    name: string;
-  };
-
-  assignedOfficer?: Officer;
-
+  
+  // Related Data
+  attachments: string[];
   notes: Note[];
   replies: Reply[];
-  feedback?: Feedback;
+  
+  // Virtual/Computed (from backend)
+  isOverdue?: boolean;
+  hoursUntilBreach?: number;
+  resolutionTimeHours?: number;
 }
 
-// ✅ Fixed: ComplaintCardProps now includes showPriority
-export interface ComplaintCardProps {
-  complaint: Complaint;
-  isSelected?: boolean;
-  onSelect?: (complaint: Complaint) => void;
-  showStatus?: boolean;
-  showPriority?: boolean;  // ← THIS WAS MISSING
+// ✅ NEW: SLA Metrics
+export interface SLAMetrics {
+  totalComplaints: number;
+  overdueComplaints: number;
+  resolvedOnTime: number;
+  resolvedLate: number;
+  slaComplianceRate: number;
+  avgResolutionHours?: number;
+  highPriorityOverdue?: number;
+  mediumPriorityOverdue?: number;
+  lowPriorityOverdue?: number;
+}
+
+// ✅ NEW: Dashboard Stats
+export interface DashboardStats {
+  total: number;
+  pending: number;
+  assigned: number;
+  inProgress: number;
+  resolved: number;
+  overdue: number;
+  highPriority: number;
+  avgResolutionHours: number;
+  slaCompliance: number;
+}
+
+// ✅ NEW: Officer Workload
+export interface OfficerWorkload {
+  officer: string;
+  total: number;
+  assigned: number;
+  inProgress: number;
+  resolved: number;
+  overdue: number;
+}
+
+// ✅ NEW: Trend Data
+export interface TrendData {
+  date: string;
+  submitted: number;
+  resolved: number;
+  high_priority: number;
+}
+
+// ✅ NEW: Category Distribution
+export interface CategoryDistribution {
+  category: string;
+  count: number;
 }

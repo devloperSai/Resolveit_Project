@@ -1,164 +1,309 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
-  Plus,
-  X,
-  ChevronRight,
-  Upload,
-  FileText,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Download,
+  Plus, X, ChevronRight, Upload, FileText, Clock, CheckCircle, AlertCircle, Download,
+  MapPin, Loader2, Map
 } from "lucide-react";
 import { Header } from "./shared/Header";
 import { Footer } from "./shared/Footer";
 import { StatCard } from "./shared/StatCard";
 import { ComplaintCard } from "./shared/ComplaintCard";
-
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
 const API_BASE = "http://localhost:8080/api";
 
 export const CitizenDashboard: React.FC = () => {
-  const { user, getAuthHeaders } = useAuth(); // ✅ added getAuthHeaders
-
+  const { user, getAuthHeaders, logout } = useAuth(); // ✅ Added logout from AuthContext
   const [complaints, setComplaints] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+ 
+  // Form fields
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("Infrastructure");
-  const [attachments, setAttachments] = useState<string[]>([]);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
+ 
+  // Location fields
+  const [locationType, setLocationType] = useState("manual");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [pincode, setPincode] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [gettingLocation, setGettingLocation] = useState(false);
+ 
   const [selectedComplaint, setSelectedComplaint] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ✅ Fetch complaints safely with token
-  const fetchComplaints = async () => {
-    if (!user?.email) return;
-    try {
-      const res = await fetch(
-        `${API_BASE}/complaints/user?email=${user.email}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...getAuthHeaders(), // ✅ attach token
-          },
-        }
-      );
+  // ✅ Fetch complaints with proper auth check using getAuthHeaders
+  useEffect(() => {
+    if (!user?.email) {
+      console.warn("⚠️ No user - skipping fetch");
+      return;
+    }
+    fetchComplaints();
+  }, [user?.email]);
 
-      if (!res.ok) {
-        console.error("Failed to fetch complaints:", res.status);
-        return;
+const fetchComplaints = async () => {
+  if (!user?.email) {
+    console.warn("⚠️ No user - skipping fetch");
+    return;
+  }
+  
+  const headers = getAuthHeaders();
+  
+  if (!headers.Authorization) {
+    console.error("❌ No auth headers found");
+    setComplaints([]);
+    return;
+  }
+
+  setLoading(true);
+  
+  try {
+    const res = await fetch(
+      `${API_BASE}/complaints/user?email=${user.email}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
       }
+    );
 
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setComplaints(data);
-      } else {
-        console.warn("Unexpected response format:", data);
-        setComplaints([]);
-      }
-    } catch (err) {
-      console.error("Error fetching complaints:", err);
+    if (res.status === 403 || res.status === 401) {
+      console.error("🚫 Authentication failed");
+      alert("Session expired. Please login again.");
+      logout();
+      return;
+    }
+
+    if (!res.ok) {
+      console.error("Failed to fetch complaints:", res.status);
+      return;
+    }
+
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      setComplaints(data);
+    } else {
+      console.warn("Unexpected response format:", data);
       setComplaints([]);
     }
-  };
+  } catch (error) {
+    console.error("Error fetching complaints:", error);
+    setComplaints([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
-  useEffect(() => {
-    fetchComplaints();
-  }, [user]);
+  // Get current location
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation not supported by your browser");
+      return;
+    }
 
-  // ✅ Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.email) return;
-
-    setLoading(true);
-    const complaintData = {
-      title,
-      description,
-      category,
-      isAnonymous,
-    };
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/complaints/submit?email=${user.email}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...getAuthHeaders(), // ✅ attach token here too
-          },
-          body: JSON.stringify(complaintData),
+    setGettingLocation(true);
+   
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude.toFixed(6);
+        const lon = position.coords.longitude.toFixed(6);
+       
+        setLatitude(lat);
+        setLongitude(lon);
+       
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+          );
+          const data = await response.json();
+         
+          if (data.address) {
+            setAddress(data.display_name || "");
+            setCity(data.address.city || data.address.town || data.address.village || "");
+            setState(data.address.state || "");
+            setPincode(data.address.postcode || "");
+          }
+        } catch (err) {
+          console.error("Reverse geocoding failed:", err);
         }
-      );
-
-      if (res.ok) {
-        alert("Complaint submitted successfully!");
-        // ✅ Reset form
-        setTitle("");
-        setDescription("");
-        setCategory("Infrastructure");
-        setIsAnonymous(false);
-        setAttachments([]);
-        setShowForm(false);
-
-        // ✅ Refresh complaint list after submission
-        setTimeout(() => {
-          fetchComplaints();
-        }, 400);
-      } else {
-        alert("Failed to submit complaint. Try again.");
-      }
-    } catch (error) {
-      console.error("Error submitting complaint:", error);
-      alert("Server error. Try again later.");
-    } finally {
-      setLoading(false);
-    }
+       
+        setGettingLocation(false);
+      },
+      (error) => {
+        console.error("Location error:", error);
+        alert("Failed to get location. Please enter manually.");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
-  // ✅ File upload handler (for future feature)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const fileNames = Array.from(files).map((file) => file.name);
-      setAttachments((prev) => [...prev, ...fileNames]);
+  // Validate form
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+   
+    if (!title.trim()) newErrors.title = "Title is required";
+    if (title.length < 10) newErrors.title = "Title must be at least 10 characters";
+    if (!description.trim()) newErrors.description = "Description is required";
+    if (description.length < 20) newErrors.description = "Description must be at least 20 characters";
+   
+    if (locationType === 'manual') {
+      if (!address.trim()) newErrors.address = "Address is required";
+      if (!city.trim()) newErrors.city = "City is required";
+      if (!state.trim()) newErrors.state = "State is required";
+      if (!pincode.trim()) newErrors.pincode = "Pincode is required";
+      if (pincode && !/^\d{6}$/.test(pincode)) newErrors.pincode = "Invalid pincode format";
+    } else {
+      if (!latitude || !longitude) newErrors.location = "Please get current location";
     }
+   
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Handle file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+   
+    const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    const maxSize = 5 * 1024 * 1024;
+   
+    const validFiles = files.filter(file => {
+      if (!validTypes.includes(file.type)) {
+        alert(`${file.name}: Invalid file type. Only JPG, PNG, PDF allowed.`);
+        return false;
+      }
+      if (file.size > maxSize) {
+        alert(`${file.name}: File too large. Max 5MB.`);
+        return false;
+      }
+      return true;
+    });
+   
+    if (attachments.length + validFiles.length > 5) {
+      alert("Maximum 5 files allowed");
+      return;
+    }
+   
+    setAttachments(prev => [...prev, ...validFiles]);
   };
 
   const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  const userComplaints = Array.isArray(complaints) ? complaints : [];
+  // Submit complaint
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    alert("Please fix form errors");
+    return;
+  }
 
-  // Find selected complaint object (we keep selectedComplaint as id to avoid changing other logic)
+  if (!user?.email) {
+    alert("Not authenticated");
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    const formData = new FormData(); // ✅ Declare it here
+    formData.append("title", title);
+    formData.append("description", description);
+    formData.append("category", category);
+    formData.append("isAnonymous", isAnonymous.toString());
+    
+    formData.append("address", address);
+    formData.append("city", city);
+    formData.append("state", state);
+    formData.append("pincode", pincode);
+    formData.append("latitude", latitude || "");
+    formData.append("longitude", longitude || "");
+    
+    attachments.forEach((file) => {
+      formData.append("files", file);
+    });
+
+    const headers = getAuthHeaders(); // ✅ Get auth headers
+
+    // ✅ FIXED: Use the multipart endpoint
+    const res = await fetch(`${API_BASE}/complaints/submit-with-files?email=${user.email}`, {
+      method: "POST",
+      headers: headers, // ✅ Don't manually set Content-Type for FormData
+      body: formData,
+    });
+
+    if (res.status === 403 || res.status === 401) {
+      console.error("🚫 Authentication failed during submission");
+      alert("Session expired. Please login again.");
+      logout();
+      return;
+    }
+
+    if (res.ok) {
+      alert("✅ Complaint submitted successfully!");
+      resetForm();
+      setShowForm(false);
+      setTimeout(fetchComplaints, 500);
+    } else {
+      const errorText = await res.text();
+      throw new Error(errorText || "Submission failed");
+    }
+  } catch (error: any) {
+    console.error("Submission error:", error);
+    alert(`Failed: ${error.message}`);
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setCategory("Infrastructure");
+    setIsAnonymous(false);
+    setAttachments([]);
+    setAddress("");
+    setCity("");
+    setState("");
+    setPincode("");
+    setLatitude("");
+    setLongitude("");
+    setLocationType("manual");
+    setErrors({});
+  };
+
+  const stats = {
+    total: complaints.length,
+    pending: complaints.filter(c => c.status === 'pending').length,
+    resolved: complaints.filter(c => c.status === 'resolved').length
+  };
+
   const selectedComplaintObj = selectedComplaint
-    ? userComplaints.find((c) => String(c.id) === String(selectedComplaint)) || null
+    ? complaints.find((c) => String(c.id) === String(selectedComplaint)) || null
     : null;
 
-  // -----------------------------
-  // PDF generation (jsPDF + html2canvas)
-  // -----------------------------
+  // PDF generation - Updated to include location fields
   const downloadComplaintPDF = async (c: any) => {
-    // Create offscreen wrapper
     const wrapper = document.createElement("div");
-    wrapper.style.width = "800px";
-    wrapper.style.padding = "24px";
-    wrapper.style.background = "#ffffff";
-    wrapper.style.color = "#111827";
-    wrapper.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial";
-    wrapper.style.boxSizing = "border-box";
-
-    const safeTitle = (c.title || "-").toString().replace(/</g, "&lt;");
-    const safeDesc = (c.description || "-").toString().replace(/</g, "&lt;").replace(/\n/g, "<br/>");
-
+    wrapper.style.cssText = "width:800px;padding:24px;background:#fff;color:#111;font-family:Arial;position:fixed;left:-9999px;top:0;box-sizing:border-box";
+    
+    const safeTitle = (c.title || "-").replace(/</g, "&lt;");
+    const safeDesc = (c.description || "-").replace(/</g, "&lt;").replace(/\n/g, "<br/>");
+    
     wrapper.innerHTML = `
-      <div style="max-width:760px; margin:0 auto;">
+      <div style="max-width:760px;margin:0 auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <div>
             <h2 style="margin:0 0 6px 0;font-size:20px;">Complaint ${c.id || "-"}</h2>
@@ -184,8 +329,24 @@ export const CitizenDashboard: React.FC = () => {
           </div>
           <div>
             <div style="color:#374151;font-weight:600;font-size:12px;">Submitted By</div>
-            <div style="margin-top:6px;font-size:14px;color:#111827;">${c.isAnonymous ? "Anonymous" : c.submittedBy || "-"}</div>
+            <div style="margin-top:6px;font-size:14px;color:#111827;">${c.isAnonymous ? "Anonymous" : (c.submittedBy || user?.email || "-")}</div>
           </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:12px;">
+          <div>
+            <div style="color:#374151;font-weight:600;font-size:12px;">City</div>
+            <div style="margin-top:6px;font-size:14px;color:#111827;">${c.city || "-"}</div>
+          </div>
+          <div>
+            <div style="color:#374151;font-weight:600;font-size:12px;">State</div>
+            <div style="margin-top:6px;font-size:14px;color:#111827;">${c.state || "-"}</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <div style="color:#374151;font-weight:600;font-size:12px;">Address</div>
+          <div style="margin-top:6px;font-size:14px;color:#111827;">${c.address || "-"}</div>
         </div>
 
         <div style="margin-bottom:12px;">
@@ -196,56 +357,47 @@ export const CitizenDashboard: React.FC = () => {
         <div style="margin-top:22px;font-size:12px;color:#6b7280;">Generated by ResolveIt — ${new Date().toLocaleString()}</div>
       </div>
     `;
-
-    wrapper.style.position = "fixed";
-    wrapper.style.left = "-9999px";
-    wrapper.style.top = "0";
+    
     document.body.appendChild(wrapper);
 
     try {
-      const canvas = await html2canvas(wrapper, {
+      const canvas = await html2canvas(wrapper, { 
         scale: 2,
         useCORS: true,
         allowTaint: true,
       });
-
+      
       const imgData = canvas.toDataURL("image/png");
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
-      });
-
+      const pdf = new jsPDF("portrait", "pt", "a4");
+      
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-
-      const imgProps: any = (pdf as any).getImageProperties(imgData);
+      
       const imgWidth = pageWidth - 40; // margin
-      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
       pdf.addImage(imgData, "PNG", 20, 20, imgWidth, imgHeight);
-
-      if (imgHeight + 40 > pageHeight) {
-        let remainingHeight = imgHeight;
-        let position = 0;
-        while (remainingHeight > pageHeight - 40) {
-          position += pageHeight - 40;
+      
+      // Handle multi-page if needed
+      let heightLeft = imgHeight;
+      let position = 0;
+      
+      if (heightLeft > pageHeight) {
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
           pdf.addPage();
-          pdf.addImage(imgData, "PNG", 20, -position + 20, imgWidth, imgHeight);
-          remainingHeight -= pageHeight - 40;
+          pdf.addImage(imgData, "PNG", 20, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
         }
       }
-
+      
       const filename = `Complaint-${c.id || "unknown"}.pdf`;
       pdf.save(filename);
     } catch (err) {
-      console.error("PDF generation failed:", err);
-      alert("PDF generation failed. Check console for details.");
+      console.error("PDF failed:", err);
+      alert("PDF generation failed");
     } finally {
-      if (wrapper && wrapper.parentNode) {
-        wrapper.parentNode.removeChild(wrapper);
-      }
+      document.body.removeChild(wrapper);
     }
   };
 
@@ -257,310 +409,310 @@ export const CitizenDashboard: React.FC = () => {
         icon={<FileText className="w-6 h-6 text-white" />}
       />
 
-      <main className="flex-1">
-        <div className="container-custom py-12">
-          {/* ✅ Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <StatCard
-              label="Total Complaints"
-              value={userComplaints.length}
-              icon={<FileText className="w-6 h-6" />}
-              color="blue"
-            />
-            <StatCard
-              label="Pending"
-              value={userComplaints.filter((c) => c.status === "pending").length}
-              icon={<Clock className="w-6 h-6" />}
-              color="amber"
-            />
-            <StatCard
-              label="Resolved"
-              value={userComplaints.filter((c) => c.status === "resolved").length}
-              icon={<CheckCircle className="w-6 h-6" />}
-              color="green"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* ✅ Complaint Form + List */}
-            <div className="lg:col-span-2">
-              <div className="card p-8 mb-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold text-slate-900">
-                    Submit New Complaint
-                  </h2>
-                  {showForm && (
-                    <button onClick={() => setShowForm(false)} className="btn-ghost">
-                      <X className="w-5 h-5" />
-                    </button>
-                  )}
-                </div>
-
-                {!showForm ? (
-                  <button
-                    onClick={() => setShowForm(true)}
-                    className="w-full btn-primary flex items-center justify-center space-x-2 py-4"
-                  >
-                    <Plus className="w-5 h-5" />
-                    <span>File a New Complaint</span>
-                  </button>
-                ) : (
-                  <form onSubmit={handleSubmit} className="space-y-6">
-                    {/* Category */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-3">
-                        Category
-                      </label>
-                      <select
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        className="input-field"
-                      >
-                        <option>Infrastructure</option>
-                        <option>Utilities</option>
-                        <option>Public Safety</option>
-                        <option>Sanitation</option>
-                        <option>Transportation</option>
-                        <option>Healthcare</option>
-                        <option>Education</option>
-                        <option>Other</option>
-                      </select>
-                    </div>
-
-                    {/* Title */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-3">
-                        Title
-                      </label>
-                      <input
-                        type="text"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        required
-                        className="input-field"
-                        placeholder="Brief description of your issue"
-                      />
-                    </div>
-
-                    {/* Description */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-3">
-                        Description
-                      </label>
-                      <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        required
-                        rows={5}
-                        className="input-field resize-none"
-                        placeholder="Provide details about your complaint..."
-                      />
-                    </div>
-
-                    {/* Attachments */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-3">
-                        Attachments (Optional)
-                      </label>
-                      <label className="flex items-center justify-center w-full p-4 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-500 transition-colors">
-                        <Upload className="w-5 h-5 text-slate-400 mr-2" />
-                        <span className="text-sm text-slate-600">
-                          Upload photos or files
-                        </span>
-                        <input
-                          type="file"
-                          multiple
-                          onChange={handleFileUpload}
-                          className="hidden"
-                        />
-                      </label>
-                      {attachments.length > 0 && (
-                        <div className="space-y-2 mt-3">
-                          {attachments.map((file, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center justify-between bg-blue-50 p-2 rounded-lg"
-                            >
-                              <span className="text-sm text-slate-700">{file}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeAttachment(index)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Anonymous Option */}
-                    <div className="flex items-center space-x-3 p-4 bg-slate-50 rounded-lg">
-                      <input
-                        type="checkbox"
-                        id="anonymous"
-                        checked={isAnonymous}
-                        onChange={(e) => setIsAnonymous(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <label
-                        htmlFor="anonymous"
-                        className="text-sm font-semibold text-slate-700 cursor-pointer"
-                      >
-                        Submit Anonymously
-                      </label>
-                    </div>
-
-                    {/* Submit Buttons */}
-                    <div className="flex gap-3 pt-4">
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="flex-1 btn-primary"
-                      >
-                        {loading ? "Submitting..." : "Submit Complaint"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowForm(false)}
-                        className="flex-1 btn-secondary"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-
-              {/* ✅ Complaint List */}
-              <div className="card p-8">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6">
-                  Your Complaints
-                </h2>
-
-                {userComplaints.length === 0 ? (
-                  <div className="text-center py-12">
-                    <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                    <p className="text-slate-500 mb-4">
-                      You haven't filed any complaints yet
-                    </p>
-                    <button
-                      onClick={() => setShowForm(true)}
-                      className="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-semibold"
-                    >
-                      <span>File your first complaint</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {userComplaints.map((complaint: any) => (
-                      <ComplaintCard
-                        key={complaint.id || Math.random()}
-                        complaint={complaint}
-                        isSelected={selectedComplaint === complaint.id}
-                        onSelect={(c) =>
-                         setSelectedComplaint(selectedComplaint === String(c.id) ? null : String(c.id))
-
-                        }
-                        showStatus
-                      />
-                    ))}
-                  </div>
-                )}
+      {/* ✅ User Info and Logout Section */}
+      {user && (
+        <div className="bg-white shadow-sm border-b border-slate-200 px-4 py-3">
+          <div className="container mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <img
+                src="/default-avatar.png"
+                alt={user.name}
+                className="w-10 h-10 rounded-full"
+              />
+              <div>
+                <p className="font-semibold text-slate-900">{user.name}</p>
+                <p className="text-sm text-slate-500">{user.email}</p>
               </div>
             </div>
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
 
-            {/* ✅ Info Panel */}
-            <div className="lg:col-span-1">
-              <div className="card p-6 sticky top-24">
-                <h3 className="font-bold text-slate-900 mb-4 text-lg">How It Works</h3>
-                <div className="space-y-4 text-sm text-slate-700">
-                  <p>1️⃣ File your complaint with proper details</p>
-                  <p>2️⃣ It gets assigned to a city officer</p>
-                  <p>3️⃣ You can track status updates</p>
-                  <p>4️⃣ Receive resolution and closure confirmation</p>
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <StatCard label="Total" value={stats.total} icon={<FileText className="w-6 h-6" />} color="blue" />
+          <StatCard label="Pending" value={stats.pending} icon={<Clock className="w-6 h-6" />} color="amber" />
+          <StatCard label="Resolved" value={stats.resolved} icon={<CheckCircle className="w-6 h-6" />} color="green" />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            {/* Form */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">Submit New Complaint</h2>
+                {showForm && <button onClick={() => { setShowForm(false); resetForm(); }} className="text-slate-500 hover:text-slate-700"><X className="w-5 h-5" /></button>}
+              </div>
+
+              {!showForm ? (
+                <button onClick={() => setShowForm(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 flex items-center justify-center gap-2">
+                  <Plus className="w-5 h-5" />
+                  File Complaint
+                </button>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Category *</label>
+                    <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200">
+                      <option>Infrastructure</option>
+                      <option>Utilities</option>
+                      <option>Public Safety</option>
+                      <option>Sanitation</option>
+                      <option>Transportation</option>
+                      <option>Healthcare</option>
+                      <option>Education</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Title *</label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className={`w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${errors.title ? 'border-red-500' : ''}`}
+                      placeholder="Brief description"
+                    />
+                    {errors.title && <p className="text-red-600 text-sm mt-1">{errors.title}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Description *</label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={4}
+                      className={`w-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-none ${errors.description ? 'border-red-500' : ''}`}
+                      placeholder="Detailed information..."
+                    />
+                    {errors.description && <p className="text-red-600 text-sm mt-1">{errors.description}</p>}
+                  </div>
+
+                  {/* Location */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <label className="block text-sm font-semibold mb-2 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-blue-600" />Location *
+                    </label>
+                    <div className="flex gap-2 mb-3">
+                      <button type="button" onClick={() => setLocationType('manual')} className={`flex-1 py-2 rounded font-semibold transition-colors ${locationType === 'manual' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300'}`}>Manual</button>
+                      <button type="button" onClick={() => setLocationType('current')} className={`flex-1 py-2 rounded font-semibold transition-colors ${locationType === 'current' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300'}`}>GPS</button>
+                    </div>
+                    {locationType === 'current' && (
+                      <button type="button" onClick={getCurrentLocation} disabled={gettingLocation} className="w-full bg-green-600 text-white py-2 rounded font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                        {gettingLocation ? <Loader2 className="w-5 h-5 animate-spin" /> : <Map className="w-5 h-5" />}
+                        {gettingLocation ? " Getting..." : " Get Location"}
+                      </button>
+                    )}
+                    {(latitude && longitude) && (
+                      <div className="mt-2 text-sm text-slate-600">
+                        <p><strong>Detected:</strong> Lat: {latitude}, Lon: {longitude}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {(locationType === 'manual' || (latitude && longitude)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input 
+                        type="text" 
+                        value={address} 
+                        onChange={(e) => setAddress(e.target.value)} 
+                        placeholder="Address *" 
+                        className={`col-span-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${errors.address ? 'border-red-500' : ''}`} 
+                      />
+                      {errors.address && <p className="text-red-600 text-sm mt-1 col-span-full">{errors.address}</p>}
+                      <input 
+                        type="text" 
+                        value={city} 
+                        onChange={(e) => setCity(e.target.value)} 
+                        placeholder="City *" 
+                        className={`px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${errors.city ? 'border-red-500' : ''}`} 
+                      />
+                      {errors.city && <p className="text-red-600 text-sm mt-1">{errors.city}</p>}
+                      <input 
+                        type="text" 
+                        value={state} 
+                        onChange={(e) => setState(e.target.value)} 
+                        placeholder="State *" 
+                        className={`px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${errors.state ? 'border-red-500' : ''}`} 
+                      />
+                      {errors.state && <p className="text-red-600 text-sm mt-1">{errors.state}</p>}
+                      <input 
+                        type="text" 
+                        value={pincode} 
+                        onChange={(e) => setPincode(e.target.value)} 
+                        placeholder="Pincode *" 
+                        maxLength={6} 
+                        className={`col-span-full px-4 py-2 border rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${errors.pincode ? 'border-red-500' : ''}`} 
+                      />
+                      {errors.pincode && <p className="text-red-600 text-sm mt-1">{errors.pincode}</p>}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Attachments (Max 5, 5MB each)</label>
+                    <label className="flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                      <Upload className="w-5 h-5 text-gray-400 mr-2" />
+                      <span className="text-sm text-gray-600">Upload files</span>
+                      <input type="file" multiple accept=".jpg,.jpeg,.png,.pdf" onChange={handleFileUpload} className="hidden" />
+                    </label>
+                    {attachments.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        {attachments.map((file, i) => (
+                          <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-lg">
+                            <span className="text-sm text-slate-700 truncate flex-1">{file.name}</span>
+                            <button type="button" onClick={() => removeAttachment(i)} className="ml-2 text-red-500 hover:text-red-700">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <input type="checkbox" id="anon" checked={isAnonymous} onChange={(e) => setIsAnonymous(e.target.checked)} className="w-4 h-4 text-blue-600" />
+                    <label htmlFor="anon" className="text-sm font-semibold cursor-pointer">Submit Anonymously</label>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button type="submit" disabled={submitting} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                      {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                      {submitting ? "Submitting..." : "Submit"}
+                    </button>
+                    <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="flex-1 bg-gray-200 py-3 rounded-lg font-semibold hover:bg-gray-300">Cancel</button>
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* List */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h2 className="text-xl font-bold mb-4">Your Complaints</h2>
+              {loading ? (
+                <div className="text-center py-12"><Loader2 className="w-12 h-12 animate-spin mx-auto text-blue-600" /></div>
+              ) : complaints.length === 0 ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 mb-4">No complaints yet</p>
+                  <button onClick={() => setShowForm(true)} className="text-blue-600 font-semibold flex items-center gap-1 mx-auto hover:text-blue-700">
+                    File first complaint <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-                <div className="mt-6 pt-6 border-t border-slate-200 text-sm text-slate-500">
-                  Need help?{" "}
-                  <a
-                    href="mailto:support@resolveit.io"
-                    className="text-blue-600 hover:text-blue-700 font-semibold"
-                  >
-                    support@resolveit.io
-                  </a>
+              ) : (
+                <div className="space-y-3">
+                  {complaints.map((c) => (
+                    <ComplaintCard 
+                      key={c.id} 
+                      complaint={c} 
+                      isSelected={selectedComplaint === String(c.id)} 
+                      onSelect={(comp) => setSelectedComplaint(selectedComplaint === String(comp.id) ? null : String(comp.id))} 
+                      showStatus 
+                    />
+                  ))}
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-xl shadow-lg p-6 sticky top-8">
+              <h3 className="font-bold mb-4">How It Works</h3>
+              <div className="space-y-3 text-sm text-gray-700">
+                <p className="flex items-start gap-2"><span className="font-bold text-blue-600">1️⃣</span> Fill complaint with location</p>
+                <p className="flex items-start gap-2"><span className="font-bold text-blue-600">2️⃣</span> Upload supporting documents</p>
+                <p className="flex items-start gap-2"><span className="font-bold text-blue-600">3️⃣</span> Admin assigns to officer</p>
+                <p className="flex items-start gap-2"><span className="font-bold text-blue-600">4️⃣</span> Track status updates</p>
+                <p className="flex items-start gap-2"><span className="font-bold text-blue-600">5️⃣</span> Get resolution confirmation</p>
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <p className="text-sm text-gray-600 mb-1">Need help?</p>
+                <a href="mailto:support@resolveit.io" className="text-blue-600 font-semibold hover:text-blue-700">support@resolveit.io</a>
               </div>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Modal: Complaint Details */}
+      {/* Detail Modal - Updated with better styling and attachments */}
       {selectedComplaintObj && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedComplaint(null)} />
-          <div className="relative max-w-2xl w-full bg-white rounded-2xl shadow-2xl overflow-auto max-h-[90vh]">
-            <div className="flex items-center justify-between p-4 border-b">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setSelectedComplaint(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4 border-b pb-4">
               <div>
-                <div className="text-xs text-slate-500">Complaint ID</div>
-                <div className="font-mono font-bold">{selectedComplaintObj.id}</div>
+                <div className="text-xs text-gray-500">Complaint ID</div>
+                <div className="font-mono font-bold text-blue-600">#{selectedComplaintObj.id}</div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => downloadComplaintPDF(selectedComplaintObj)}
-                  className="btn-primary flex items-center gap-2 py-2 px-3"
+              <div className="flex gap-2">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); downloadComplaintPDF(selectedComplaintObj); }} 
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors"
                 >
-                  <Download className="w-4 h-4" /> Download PDF
+                  <Download className="w-4 h-4" /> PDF
                 </button>
-                <button
-                  onClick={() => setSelectedComplaint(null)}
-                  className="btn-ghost py-2 px-3"
-                >
-                  <X />
+                <button onClick={(e) => { e.stopPropagation(); setSelectedComplaint(null); }} className="text-slate-500 hover:text-slate-700">
+                  <X className="w-6 h-6" />
                 </button>
               </div>
             </div>
-
-            <div className="p-6 space-y-4 text-sm text-slate-700">
+            <div className="space-y-4 text-sm text-slate-700">
               <div>
-                <div className="text-xs text-slate-600">Title</div>
-                <div className="font-semibold text-slate-900">{selectedComplaintObj.title}</div>
+                <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Title</div>
+                <div className="font-semibold text-slate-900 mt-1">{selectedComplaintObj.title}</div>
               </div>
-
               <div>
-                <div className="text-xs text-slate-600">Description</div>
-                <div className="whitespace-pre-wrap">{selectedComplaintObj.description}</div>
+                <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Description</div>
+                <div className="mt-1 whitespace-pre-wrap">{selectedComplaintObj.description}</div>
               </div>
-
-              <div className="flex justify-between">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <div className="text-xs text-slate-600">Category</div>
-                  <div>{selectedComplaintObj.category}</div>
+                  <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Category</div>
+                  <div className="mt-1">{selectedComplaintObj.category}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-600">Submitted</div>
-                  <div>{new Date(selectedComplaintObj.submittedAt).toLocaleString()}</div>
+                  <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Status</div>
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold mt-1 ${
+                    selectedComplaintObj.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                    selectedComplaintObj.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                    'bg-blue-100 text-blue-700'
+                  }`}>
+                    {selectedComplaintObj.status?.toUpperCase()}
+                  </span>
                 </div>
               </div>
-
               <div>
-                <div className="text-xs text-slate-600">Attachments</div>
+                <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Submitted</div>
+                <div className="mt-1">{new Date(selectedComplaintObj.submittedAt).toLocaleString()}</div>
+              </div>
+              {selectedComplaintObj.city && (
+                <div>
+                  <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Location</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-blue-600" />
+                    <span>{selectedComplaintObj.city}, {selectedComplaintObj.state}</span>
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="text-xs text-slate-600 font-semibold uppercase tracking-wide">Attachments</div>
                 {selectedComplaintObj.attachments?.length ? (
-                  <ul className="list-disc list-inside">
+                  <ul className="mt-2 space-y-1 list-disc list-inside">
                     {selectedComplaintObj.attachments.map((a: string, i: number) => (
-                      <li key={i} className="text-blue-600 hover:underline cursor-pointer">{a}</li>
+                      <li key={i} className="text-blue-600 hover:underline cursor-pointer text-sm">{a}</li>
                     ))}
                   </ul>
                 ) : (
-                  <div className="text-sm text-slate-500">No attachments</div>
+                  <div className="mt-1 text-sm text-slate-500 italic">No attachments</div>
                 )}
-              </div>
-
-              <div>
-                <div className="text-xs text-slate-600">Status</div>
-                <div className="font-semibold">{selectedComplaintObj.status}</div>
               </div>
             </div>
           </div>
@@ -571,5 +723,3 @@ export const CitizenDashboard: React.FC = () => {
     </div>
   );
 };
-
-export default CitizenDashboard;

@@ -2,22 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   Shield, FileText, Clock, TrendingUp, CheckCircle2, AlertTriangle,
-  User, Calendar, FileImage, MessageSquare, FileText as NoteIcon,
-  UserCheck
+  User, Calendar, FileImage, MessageSquare, StickyNote,
+  UserCheck, AlertCircle
 } from 'lucide-react';
 import { Header } from './shared/Header';
 import { Footer } from './shared/Footer';
 import { StatCard } from './shared/StatCard';
 import { ComplaintCard } from './shared/ComplaintCard';
+import { SubmitReportModal } from './shared/SubmitReportModal';
 import { Complaint, ComplaintStatus } from '../types';
+import { useReportService } from '../hooks/useReportService';
 import toast from 'react-hot-toast';
-
-
 
 const API_BASE = "http://localhost:8080/api";
 
 export const OfficerDashboard: React.FC = () => {
   const { user, getAuthHeaders } = useAuth();
+  const { validateResolution, checkReportExists } = useReportService();
+
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [selectedComplaint, setSelectedComplaint] = useState<Complaint | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,13 +27,31 @@ export const OfficerDashboard: React.FC = () => {
   const [noteContent, setNoteContent] = useState('');
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStatus, setReportStatus] = useState<Record<number, boolean>>({});
 
-  // Fetch assigned complaints
   useEffect(() => {
     if (user?.email) {
       fetchAssignedComplaints();
     }
   }, [user]);
+
+  useEffect(() => {
+    const checkReports = async () => {
+      const statusMap: Record<number, boolean> = {};
+      
+      for (const complaint of complaints) {
+        const hasReport = await checkReportExists(complaint.id);
+        statusMap[complaint.id] = hasReport;
+      }
+      
+      setReportStatus(statusMap);
+    };
+
+    if (complaints.length > 0) {
+      checkReports();
+    }
+  }, [complaints]);
 
   const fetchAssignedComplaints = async () => {
     setLoading(true);
@@ -71,45 +91,52 @@ export const OfficerDashboard: React.FC = () => {
     }
   };
 
- // Update status using context (which has toast notifications)
-const updateStatus = async (id: number, status: ComplaintStatus) => {
-  try {
-    const res = await fetch(`${API_BASE}/complaints/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-      body: JSON.stringify({ status: status.toUpperCase().replace('-', '_') }),
-    });
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(errorText || 'Failed to update status');
+  const updateStatus = async (id: number, status: ComplaintStatus) => {
+    if (status === 'resolved') {
+      const validation = await validateResolution(id);
+      
+      if (!validation.canResolve) {
+        toast.error(validation.message, {
+          duration: 5000,
+          icon: '🚫',
+        });
+        return;
+      }
     }
 
-    const updatedComplaint = await res.json();
-    
-    // Update local state
-    setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
-    if (selectedComplaint?.id === id) {
-      setSelectedComplaint({ ...selectedComplaint, status });
-    }
-    
-    // ✅ Show success toast
-    toast.success(`Status updated to ${status.replace('-', ' ').toUpperCase()}`, {
-      duration: 3000,
-      position: 'top-right',
-    });
-    
-  } catch (error) {
-    console.error('Failed to update status:', error);
-    // ❌ Show error toast
-    toast.error('Failed to update status. Please try again.', {
-      duration: 4000,
-      position: 'top-right',
-    });
-  }
-};
+    try {
+      const res = await fetch(`${API_BASE}/complaints/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ status: status.toUpperCase().replace('-', '_') }),
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || 'Failed to update status');
+      }
 
-  // Send reply to citizen
+      const updatedComplaint = await res.json();
+      
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+      if (selectedComplaint?.id === id) {
+        setSelectedComplaint({ ...selectedComplaint, status });
+      }
+      
+      toast.success(`Status updated to ${status.replace('-', ' ').toUpperCase()}`, {
+        duration: 3000,
+        position: 'top-right',
+      });
+      
+    } catch (error: any) {
+      console.error('Failed to update status:', error);
+      toast.error(error.message || 'Failed to update status. Please try again.', {
+        duration: 4000,
+        position: 'top-right',
+      });
+    }
+  };
+
   const sendReply = async () => {
     if (!selectedComplaint || !replyContent.trim()) return;
 
@@ -134,12 +161,12 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
       setSelectedComplaint(updatedComplaint);
       setReplyContent('');
       setShowReplyModal(false);
+      toast.success('Reply sent successfully');
     } catch {
-      alert("Failed to send reply.");
+      toast.error("Failed to send reply.");
     }
   };
 
-  // Add internal note
   const addInternalNote = async () => {
     if (!selectedComplaint || !noteContent.trim()) return;
 
@@ -165,9 +192,14 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
       setSelectedComplaint(updatedComplaint);
       setNoteContent('');
       setShowNoteModal(false);
+      toast.success('Note saved successfully');
     } catch {
-      alert("Failed to save note.");
+      toast.error("Failed to save note.");
     }
+  };
+
+  const handleReportSuccess = () => {
+    fetchAssignedComplaints();
   };
 
   const stats = {
@@ -175,12 +207,14 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
     assigned: complaints.filter(c => c.status === 'assigned').length,
     inProgress: complaints.filter(c => c.status === 'in-progress').length,
     resolved: complaints.filter(c => c.status === 'resolved').length,
-    highPriority: complaints.filter(c => c.priority.toLowerCase() === 'high').length, // ← NOW CORRECT!
+    highPriority: complaints.filter(c => c.priority.toLowerCase() === 'high').length,
   };
 
   if (!user) {
     return <div className="text-center py-32 text-xl">Please log in as an officer.</div>;
   }
+
+  const hasReport = selectedComplaint ? reportStatus[selectedComplaint.id] : false;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-cyan-50 to-slate-50">
@@ -191,7 +225,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
       />
 
       <main className="flex-1 container-custom py-12">
-        {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-5 mb-12">
           <StatCard label="Total Assigned" value={stats.total} icon={<FileText className="w-6 h-6" />} color="blue" />
           <StatCard label="Pending Action" value={stats.assigned} icon={<Clock className="w-6 h-6" />} color="amber" />
@@ -201,7 +234,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left: Complaints List */}
           <div className="lg:col-span-2 space-y-5">
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
               <UserCheck className="w-7 h-7 text-cyan-600" />
@@ -214,29 +246,37 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
               <div className="card p-16 text-center">
                 <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                 <p className="text-lg text-slate-600">No complaints assigned yet.</p>
-                <p className="text-sm text-slate-500 mt-2">Check back later!</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {complaints.map((complaint) => (
-                  <ComplaintCard
-                    key={complaint.id}
-                    complaint={complaint}
-                    isSelected={selectedComplaint?.id === complaint.id}
-                    onSelect={setSelectedComplaint}
-                    showStatus={true}
-                    showPriority={true}
-                  />
+                  <div key={complaint.id} className="relative">
+                    <ComplaintCard
+                      complaint={complaint}
+                      isSelected={selectedComplaint?.id === complaint.id}
+                      onSelect={setSelectedComplaint}
+                      showStatus={true}
+                      showPriority={true}
+                    />
+                    <div className="absolute top-4 right-4">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${
+                        reportStatus[complaint.id]
+                          ? 'bg-green-100 text-green-700 border border-green-300'
+                          : 'bg-slate-100 text-slate-400 border border-slate-200'
+                      }`}>
+                        <FileText className="w-3 h-3" />
+                        {reportStatus[complaint.id] ? 'Report Submitted' : 'No Report'}
+                      </span>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Right: Detail Panel */}
           <div className="lg:col-span-1">
             {selectedComplaint ? (
               <div className="card p-6 sticky top-24 space-y-6 max-h-[calc(100vh-10rem)] overflow-y-auto bg-white/90 backdrop-blur">
-                {/* Header - BULLETPROOF PRIORITY BADGE */}
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-xs text-slate-600 uppercase font-semibold">Complaint ID</p>
@@ -251,7 +291,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   </span>
                 </div>
 
-                {/* Citizen Info */}
                 <div className="space-y-3 py-4 border-y border-slate-200">
                   <div className="flex items-center gap-3">
                     <User className="w-5 h-5 text-slate-500" />
@@ -273,7 +312,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   </div>
                 </div>
 
-                {/* Description */}
                 <div>
                   <p className="text-xs text-slate-600 uppercase font-semibold mb-2">Description</p>
                   <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-lg">
@@ -281,7 +319,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   </p>
                 </div>
 
-                {/* Attachments */}
                 {selectedComplaint.attachments && selectedComplaint.attachments.length > 0 && (
                   <div>
                     <p className="text-xs text-slate-600 uppercase font-semibold mb-2 flex items-center gap-2">
@@ -299,7 +336,30 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   </div>
                 )}
 
-                {/* Status Update */}
+                {!hasReport && selectedComplaint.status !== 'resolved' && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-800">
+                        <strong>Report Required:</strong> Submit a report before resolving this complaint.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowReportModal(true)}
+                  disabled={hasReport}
+                  className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 ${
+                    hasReport
+                      ? 'bg-green-100 text-green-700 border-2 border-green-300 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 shadow-lg'
+                  }`}
+                >
+                  <FileText className="w-5 h-5" />
+                  {hasReport ? 'Report Submitted ✓' : 'Submit Report'}
+                </button>
+
                 <div>
                   <label className="text-xs text-slate-600 uppercase font-semibold mb-2 block">Update Status</label>
                   <select
@@ -309,11 +369,12 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   >
                     <option value="assigned">Assigned</option>
                     <option value="in-progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
+                    <option value="resolved" disabled={!hasReport}>
+                      Resolved {!hasReport && '(Report Required)'}
+                    </option>
                   </select>
                 </div>
 
-                {/* Actions */}
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t">
                   <button
                     onClick={() => setShowReplyModal(true)}
@@ -326,14 +387,11 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                     onClick={() => setShowNoteModal(true)}
                     className="btn-secondary flex items-center justify-center gap-2 py-3 text-sm font-medium"
                   >
-                    <NoteIcon className="w-4 h-4" />
+                    <StickyNote className="w-4 h-4" />
                     Note
                   </button>
-                        
-
                 </div>
 
-                {/* Admin Updates */}
                 {selectedComplaint.replies?.filter(r => r.isAdminReply).length > 0 && (
                   <div className="pt-4 border-t">
                     <h4 className="font-semibold text-sm mb-3 text-slate-800">Admin Updates</h4>
@@ -352,7 +410,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
                   </div>
                 )}
 
-                {/* Your Notes */}
                 {selectedComplaint.notes?.length > 0 && (
                   <div className="pt-4 border-t">
                     <h4 className="font-semibold text-sm mb-3 text-slate-800">Your Internal Notes</h4>
@@ -380,7 +437,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
         </div>
       </main>
 
-      {/* Reply Modal */}
       {showReplyModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-8 max-w-2xl w-full animate-slide-in-up">
@@ -402,7 +458,6 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
               <button onClick={sendReply} className="btn-primary flex-1 py-3 text-lg font-semibold">
                 Send Update
               </button>
-        
               <button 
                 onClick={() => { setShowReplyModal(false); setReplyContent(''); }} 
                 className="btn-ghost flex-1 py-3 text-lg"
@@ -414,12 +469,11 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
         </div>
       )}
 
-      {/* Internal Note Modal */}
       {showNoteModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card p-8 max-w-2xl w-full animate-slide-in-up">
             <h3 className="text-2xl font-bold mb-6 flex items-center gap-3">
-              <NoteIcon className="w-7 h-7 text-purple-600" />
+              <StickyNote className="w-7 h-7 text-purple-600" />
               Internal Note (Admin Only)
             </h3>
             <textarea
@@ -442,10 +496,17 @@ const updateStatus = async (id: number, status: ComplaintStatus) => {
               >
                 Cancel
               </button>
-              
             </div>
           </div>
         </div>
+      )}
+
+      {showReportModal && selectedComplaint && (
+        <SubmitReportModal
+          complaint={selectedComplaint}
+          onClose={() => setShowReportModal(false)}
+          onSuccess={handleReportSuccess}
+        />
       )}
 
       <Footer />

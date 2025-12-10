@@ -16,37 +16,15 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister }) => {
   const [loading, setLoading] = useState(false);
 
   // ✅ Login Handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    if (!email || !password) {
-      setError("Please fill in all fields.");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      await login(email, password);
-    } catch (err: any) {
-      const message = err?.message || "Login failed.";
-
-      if (message.includes("pending") || message.includes("approval")) {
-        setError(
-          "🕒 Your officer account is pending admin approval. You’ll be able to log in once approved."
-        );
-      } else if (message.includes("No user found")) {
-        setError("No account found with this email. Please register first.");
-      } else if (message.includes("Invalid password")) {
-        setError("Incorrect password. Please try again.");
-      } else {
-        setError("Login failed. Please check your credentials or try again later.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  try {
+    await login(email, password); // ✅ This should save token internally
+    console.log("✅ Token after login:", localStorage.getItem('resolveit_token')); // ADD THIS
+  } catch (err) {
+    // error handling
+  }
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">

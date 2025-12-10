@@ -1,0 +1,94 @@
+# Java / Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+.mvn/timing.properties
+.mvn/timing.properties.lock
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# IDE
+.idea/
+.eclipse/
+.settings/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.c9/
+*.launch
+.factorypath
+
+# Gradle
+.gradle/
+build/
+
+# Node / npm / yarn / pnpm
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+.env.local
+.env.*.local
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+bun.lockb
+
+# Vite
+.vite/
+
+# Environment variables
+.env
+.env.production
+.env.development
+.env.test
+.env.local
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Uploads (local files)
+uploads/
+!uploads/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# IntelliJ
+out/
