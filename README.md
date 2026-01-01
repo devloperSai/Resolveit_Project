@@ -29,7 +29,6 @@ A full-stack web application for managing citizen complaints with role-based acc
 
 **File Storage:**
 - Local filesystem (`/uploads` directory)
-- **⚠️ Not production-ready** - Use S3/Azure Blob in real deployments
 
 ---
 
